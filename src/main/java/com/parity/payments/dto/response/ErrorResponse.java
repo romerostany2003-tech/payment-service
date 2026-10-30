@@ -1,5 +1,9 @@
 package com.parity.payments.dto.response;
 
-public class ErrorResponse {
-    
-}
+import java.time.LocalDateTime;
+
+public record ErrorResponse(    
+    String message,
+    int statusCode,
+    LocalDateTime timestamp
+) {}
