@@ -25,7 +25,10 @@ public class PaymentController {
 
     @PostMapping
     public ResponseEntity<PaymentResult> processPayment(
-        @RequestHeader("Idempotency-Key") @NotBlank(message = "Idempotency-Key header must not be blank") @NotBlank @Size(max = 255) String idempotencyKey,
+        @Size(max = 255) 
+        @RequestHeader("Idempotency-Key") 
+        @NotBlank(message = "Idempotency-Key header must not be blank")
+        String idempotencyKey,
         @Valid @RequestBody PaymentRequest request
     ) {
         PaymentResult result = paymentService.processPayment(idempotencyKey, request);
