@@ -1,0 +1,508 @@
+{
+  "info": {
+    "_postman_id": "c2978a35-1b45-46d5-8ebf-6f8ff9305b71",
+    "name": "Parity Payment Service",
+    "description": "Postman collection for the Payment Service. Run the collection in order so the replay and idempotency-conflict scenarios can reuse the payment created by the first request. The API must be running on {{baseUrl}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Happy Path",
+      "description": "Valid payment creation and idempotent replay scenarios.",
+      "item": [
+        {
+          "name": "Create Payment - INR with description",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const key = `postman-payment-${Date.now()}-${pm.variables.replaceIn('{{$guid}}')}`;",
+                  "pm.collectionVariables.set('primaryIdempotencyKey', key);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('A new pending payment is returned', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.replayed).to.eql(false);",
+                  "  pm.expect(json.payment.status).to.eql('PENDING');",
+                  "  pm.expect(json.payment.currency).to.eql('INR');",
+                  "  pm.expect(json.payment.paymentId).to.be.a('string');",
+                  "  pm.collectionVariables.set('primaryPaymentId', json.payment.paymentId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{primaryIdempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"INR\",\n  \"description\": \"Postman test payment\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payments",
+            "description": "Creates a new payment. Expected: 201 Created, status PENDING, replayed false. Saves the payment ID and idempotency key for later requests."
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Idempotency-Key", "value": "postman-payment-example" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sourceAccountId\": \"11111111-1111-1111-1111-111111111111\",\n  \"destinationAccountId\": \"22222222-2222-2222-2222-222222222222\",\n  \"amount\": 100.50,\n  \"currency\": \"INR\",\n  \"description\": \"Postman test payment\"\n}"
+                },
+                "url": "{{baseUrl}}/payments"
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"payment\": {\n    \"paymentId\": \"33333333-3333-3333-3333-333333333333\",\n    \"sourceAccountId\": \"11111111-1111-1111-1111-111111111111\",\n    \"destinationAccountId\": \"22222222-2222-2222-2222-222222222222\",\n    \"amount\": 100.50,\n    \"currency\": \"INR\",\n    \"status\": \"PENDING\",\n    \"description\": \"Postman test payment\",\n    \"createdAt\": \"2026-11-04T10:00:00Z\"\n  },\n  \"replayed\": false\n}"
+            }
+          ]
+        },
+        {
+          "name": "Replay Same Payment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('The original payment is replayed', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.replayed).to.eql(true);",
+                  "  pm.expect(json.payment.paymentId).to.eql(pm.collectionVariables.get('primaryPaymentId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{primaryIdempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"INR\",\n  \"description\": \"Postman test payment\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payments",
+            "description": "Sends the same key and payload as the first request. Expected: 200 OK, the same paymentId, replayed true."
+          }
+        },
+        {
+          "name": "Replay Equivalent Amount Scale",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('100.5000 is treated as equivalent to 100.50', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.replayed).to.eql(true);",
+                  "  pm.expect(json.payment.paymentId).to.eql(pm.collectionVariables.get('primaryPaymentId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{primaryIdempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 100.5000,\n  \"currency\": \"INR\",\n  \"description\": \"Postman test payment\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payments",
+            "description": "Demonstrates canonical amount fingerprinting. Expected: 200 OK and replayed true."
+          }
+        },
+        {
+          "name": "Create Payment - USD without description",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                "pm.test('Description is optional', () => {",
+                "  const json = pm.response.json();",
+                "  pm.expect(json.payment.currency).to.eql('USD');",
+                "  pm.expect(json.payment.description).to.eql(null);",
+                "  pm.expect(json.replayed).to.eql(false);",
+                "});"
+              ]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 25.00,\n  \"currency\": \"USD\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payments",
+            "description": "Valid request without the optional description. Expected: 201 Created."
+          }
+        },
+        {
+          "name": "Create Payment - EUR minimum amount",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                "pm.test('Minimum amount is accepted', () => {",
+                "  const json = pm.response.json();",
+                "  pm.expect(json.payment.currency).to.eql('EUR');",
+                "  pm.expect(Number(json.payment.amount)).to.eql(0.01);",
+                "});"
+              ]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 0.01,\n  \"currency\": \"EUR\",\n  \"description\": \"Minimum valid amount\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payments",
+            "description": "The inclusive minimum amount is 0.01. Expected: 201 Created."
+          }
+        },
+        {
+          "name": "Create Payment - GBP",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                "pm.test('GBP is accepted', () => pm.expect(pm.response.json().payment.currency).to.eql('GBP'));"
+              ]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 75.25,\n  \"currency\": \"GBP\",\n  \"description\": \"GBP payment\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payments",
+            "description": "Valid GBP payment. Expected: 201 Created."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Potential Error Cases",
+      "description": "Invalid inputs and idempotency conflicts. Run after Happy Path when using Collection Runner because the first request depends on its saved idempotency key.",
+      "item": [
+        {
+          "name": "Same Idempotency Key with Different Amount",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));",
+                "pm.test('Conflict response identifies the reused key', () => {",
+                "  const json = pm.response.json();",
+                "  pm.expect(json.statusCode).to.eql(409);",
+                "  pm.expect(json.message).to.include(pm.collectionVariables.get('primaryIdempotencyKey'));",
+                "});"
+              ]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{primaryIdempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 999.00,\n  \"currency\": \"INR\",\n  \"description\": \"Postman test payment\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payments",
+            "description": "Reuses the first request's key with a changed amount. Expected: 409 Conflict."
+          },
+          "response": [{
+            "name": "409 Conflict",
+            "originalRequest": {
+              "method": "POST",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" },
+                { "key": "Idempotency-Key", "value": "postman-payment-example" }
+              ],
+              "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"11111111-1111-1111-1111-111111111111\",\n  \"destinationAccountId\": \"22222222-2222-2222-2222-222222222222\",\n  \"amount\": 999.00,\n  \"currency\": \"INR\"\n}" },
+              "url": "{{baseUrl}}/payments"
+            },
+            "status": "Conflict",
+            "code": 409,
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": "{\n  \"message\": \"Idempotency key: postman-payment-example already used with different request\",\n  \"statusCode\": 409,\n  \"timestamp\": \"2026-11-04T15:30:00\"\n}"
+          }]
+        },
+        {
+          "name": "Missing Idempotency-Key Header",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"INR\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Omits the required header. Expected: 400 Bad Request."
+          }
+        },
+        {
+          "name": "Empty Idempotency-Key Header",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"INR\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Sends an empty header value. Expected: 400 Bad Request. Some Postman versions may treat this as a missing header, which should still produce 400."
+          }
+        },
+        {
+          "name": "Whitespace-only Idempotency-Key Header",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "   " }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"INR\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Expected: 400 Bad Request because @NotBlank rejects whitespace-only values."
+          }
+        },
+        {
+          "name": "Idempotency-Key Longer Than 255 Characters",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{longIdempotencyKey}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"INR\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Uses a 256-character key. Expected: 400 Bad Request because the controller has @Size(max = 255)."
+          }
+        },
+        {
+          "name": "Missing Source Account ID",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Error mentions sourceAccountId', () => pm.expect(pm.response.json().message).to.include('sourceAccountId'));" ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"INR\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Expected: 400 with sourceAccountId: Source account ID is required."
+          }
+        },
+        {
+          "name": "Missing Destination Account ID",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Error mentions destinationAccountId', () => pm.expect(pm.response.json().message).to.include('destinationAccountId'));" ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"INR\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Expected: 400 with destinationAccountId: Destination account ID is required."
+          }
+        },
+        {
+          "name": "Source and Destination Accounts Are the Same",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Error explains accounts must differ', () => pm.expect(pm.response.json().message).to.include('must differ'));" ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{sourceAccountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"INR\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Expected: 400 with Source and destination accounts must differ."
+          }
+        },
+        {
+          "name": "Invalid Source Account UUID",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"not-a-uuid\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"INR\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Expected: 400 from JSON deserialization. The body uses Spring's default error format because HttpMessageNotReadableException is not handled explicitly."
+          }
+        },
+        {
+          "name": "Missing Amount",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Error mentions amount', () => pm.expect(pm.response.json().message).to.include('amount'));" ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"currency\": \"INR\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Expected: 400 with amount: Amount is required."
+          }
+        },
+        {
+          "name": "Zero Amount",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Error says amount must be greater than zero', () => pm.expect(pm.response.json().message).to.include('Amount must be greater than zero'));" ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 0,\n  \"currency\": \"INR\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Expected: 400 because the minimum amount is 0.01."
+          }
+        },
+        {
+          "name": "Negative Amount",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Error says amount must be greater than zero', () => pm.expect(pm.response.json().message).to.include('Amount must be greater than zero'));" ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": -10.00,\n  \"currency\": \"INR\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Expected: 400 because negative amounts are invalid."
+          }
+        },
+        {
+          "name": "Amount Below Minimum",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Error says amount must be greater than zero', () => pm.expect(pm.response.json().message).to.include('Amount must be greater than zero'));" ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 0.009,\n  \"currency\": \"INR\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Expected: 400 because 0.009 is less than the inclusive minimum 0.01."
+          }
+        },
+        {
+          "name": "Missing Currency",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Error mentions currency', () => pm.expect(pm.response.json().message).to.include('currency'));" ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 100.50\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Expected: 400 with currency: Currency is required."
+          }
+        },
+        {
+          "name": "Unsupported Currency",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"CAD\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Only USD, EUR, INR, and GBP are supported. Expected: 400 from JSON deserialization."
+          }
+        },
+        {
+          "name": "Lowercase Currency",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"usd\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Currency enum values are case-sensitive. Expected: 400."
+          }
+        },
+        {
+          "name": "Description Longer Than 255 Characters",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Error mentions description length', () => pm.expect(pm.response.json().message).to.include('Description cannot exceed 255 characters'));" ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"INR\",\n  \"description\": \"{{longDescription}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Uses a 256-character description. Expected: 400."
+          }
+        },
+        {
+          "name": "Malformed JSON",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountId\": \"{{sourceAccountId}}\",\n  \"destinationAccountId\": \"{{destinationAccountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"INR\",\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Contains an invalid trailing comma. Expected: 400 from JSON parsing."
+          }
+        },
+        {
+          "name": "Empty Request Body",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
+            "body": { "mode": "raw", "raw": "", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/payments",
+            "description": "Expected: 400 because the request body is required."
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:9090", "type": "string" },
+    { "key": "sourceAccountId", "value": "11111111-1111-1111-1111-111111111111", "type": "string" },
+    { "key": "destinationAccountId", "value": "22222222-2222-2222-2222-222222222222", "type": "string" },
+    { "key": "primaryIdempotencyKey", "value": "", "type": "string" },
+    { "key": "primaryPaymentId", "value": "", "type": "string" },
+    { "key": "longIdempotencyKey", "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "type": "string" },
+    { "key": "longDescription", "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "type": "string" }
+  ]
+}
