@@ -25,8 +25,7 @@ public class PaymentRequest {
     private UUID destinationAccountId;
 
     @NotNull(message = "Amount is required")
-    @DecimalMin(value = "0.01", inclusive = true,
-            message = "Amount must be greater than zero")
+    @DecimalMin(value = "0.01", inclusive = true, message = "Amount must be greater than zero")
     private BigDecimal amount;
 
     @NotNull(message = "Currency is required")
