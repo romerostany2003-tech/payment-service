@@ -21,17 +21,18 @@ The service currently handles payment creation only. It does not move money, che
 
 ## Technology stack
 
-Language              -> Java 21 
-Framework             -> Spring Boot 4.1.1
-HTTP API              -> Spring Web MVC
-Persistence           -> Spring Data JPA and Hibernate 
-Database              -> MySQL 
-Schema migrations     -> Flyway 
-Validation            -> Jakarta Bean Validation 
-Build                 -> Maven and Maven Wrapper
-Boilerplate reduction -> Lombok 
-Unit testing          -> JUnit 5 and Mockito 
-Integration testing   -> Spring Boot Test and Testcontainers
+- Language              -> Java 21 
+- Framework             -> Spring Boot 4.1.1
+- HTTP API              -> Spring Web MVC
+- Persistence           -> Spring Data JPA and Hibernate 
+- Database              -> MySQL 
+- Schema migrations     -> Flyway 
+- Validation            -> Jakarta Bean Validation 
+- Build                 -> Maven and Maven Wrapper
+- Boilerplate reduction -> Lombok 
+- Unit testing          -> JUnit 5 and Mockito 
+- Integration testing   -> Spring Boot Test and Testcontainers
+
 
 ### Main components
 
